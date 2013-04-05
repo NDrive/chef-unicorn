@@ -33,6 +33,17 @@ node['unicorn']['installs'].each_with_index do |overrides, index|
     mode '775'
   end
 
+  template "/etc/sudoers.d/#{install['service']}" do
+    source "sudoers.erb"
+    owner "root"
+    group "root"
+    mode 0440
+    variables(
+      :user    => install['user'],
+      :service => install['service'])
+  end
+
+
   # Setup the service to run at boot. We can't start it yet cos no config,
   # but we need to enable it so the config can notify the restarter.
   service install['service'] do
