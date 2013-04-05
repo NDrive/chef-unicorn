@@ -1,17 +1,24 @@
-node['unicorn']['installs'].each do |install|
 
+def unicorn_defaults app_root, env
+  config_path = "#{app_root}/config/unicorn.rb"
+
+  return {
+    'rack_env' => env,
+    'user'     => 'root',
+    'group'    => 'root',
+    'service'  => "unicorn-#{env}",
+    'pid'      => "#{app_root}/tmp/pids/unicorn.pid",
+    'command'  => "cd #{app_root} && bundle exec unicorn_rails -D -E #{env} -c #{config_path}"
+  }
+end
+
+def get_attributes install
+  unicorn_defaults(install['app_root'], install['rack_env'] || 'production').merge(install)
+end
+
+node['unicorn']['installs'].each_with_index do |overrides, index|
   # Since a lot of defaults rely on app_root, set it and reload defeaults
-  node.set['unicorn']['app_root'] = install['app_root']
-  node.load_attribute_by_short_filename('default', 'unicorn')
-
-  # Apply the defaults for each unicorn install
-  install['config'] ||= {}
-  %w(rack_env user group pid service command).each do |k|
-    install[k] ||= node['unicorn'][k]
-  end
-  %w(generate path stderr_path stdout_path listen working_directory worker_timeout preload_app worker_processes before_exec before_fork after_fork).each do |k|
-    install['config'][k] ||= node['unicorn']['config'][k]
-  end
+  install = get_attributes(overrides)
 
   # Create the init.d script
   template "/etc/init.d/#{install['service']}" do
@@ -31,36 +38,5 @@ node['unicorn']['installs'].each do |install|
   service install['service'] do
     supports [:start, :restart, :reload, :stop, :status]
     action :enable
-  end
-
-  # Create the install if necessary
-  template install['config']['path'] do
-    only_if   { install['config']['generate'] }
-    source    'config.rb.erb'
-    user      install['user']
-    group     install['group']
-    variables(
-      :identifier        => install['service'],
-      :listen            => install['config']['listen'],
-      :user              => install['user'],
-      :group             => install['group'],
-      :working_directory => install['config']['working_directory'],
-      :worker_timeout    => install['config']['worker_timeout'],
-      :preload_app       => install['config']['preload_app'],
-      :worker_processes  => install['config']['worker_processes'],
-      :before_exec       => install['config']['before_exec'],
-      :before_fork       => install['config']['before_fork'],
-      :after_fork        => install['config']['after_fork'],
-      :pid               => install['pid'],
-      :stderr_path       => install['config']['stderr_path'],
-      :stdout_path       => install['config']['stdout_path']
-    )
-    mode '755'
-    notifies :restart, resources(:service => install['service']), :delayed
-  end
-
-  # Start 'er up.
-  service install['service'] do
-    action :start
   end
 end
